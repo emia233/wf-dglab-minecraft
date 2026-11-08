@@ -20,7 +20,6 @@ import net.minecraft.network.chat.Component;
  * <p>两块共用同一个位置与字号，但显示开关、通道选择各自独立。
  */
 public final class StrengthHud implements HudElement {
-    private static final int COLOR_TITLE = 0xFFCCCCCC;
     private static final int COLOR_SELF = 0xFFFFFFFF;
     private static final int COLOR_PEER = 0xFF7CFF9A;
     private static final int COLOR_OFFLINE = 0xFFFF5555;
@@ -86,19 +85,17 @@ public final class StrengthHud implements HudElement {
         return width;
     }
 
-    /** 画「被控」那一块：只有主人视角才有数据，没数据时显示未连接。 */
+    /** 画被控那一块：只有主人视角才有数据，没数据时显示未连接。 */
     private void drawPeer(Minecraft client, GuiGraphicsExtractor graphics,
                           WildestConfig cfg, int peerX) {
-        graphics.text(client.font, Component.literal("被控"), peerX, 0, COLOR_TITLE);
-
         if (!PeerState.known()) {
-            graphics.text(client.font, Component.literal("未连接"), peerX, LINE_HEIGHT, COLOR_PEER_OFFLINE);
+            graphics.text(client.font, Component.literal("未连接"), peerX, 0, COLOR_PEER_OFFLINE);
             return;
         }
 
         boolean showA = cfg.peerHudChannels != 2;
         boolean showB = cfg.peerHudChannels != 1;
-        int row = LINE_HEIGHT;
+        int row = 0;
         if (showA) {
             graphics.text(client.font, Component.literal("A  " + PeerState.a()), peerX, row, COLOR_PEER);
             row += LINE_HEIGHT;
