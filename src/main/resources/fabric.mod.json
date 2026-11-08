@@ -1,0 +1,35 @@
+{
+	"schemaVersion": 1,
+	"id": "wildestfantasy",
+	"version": "${version}",
+	"name": "WF dglab",
+	"description": "适合多人游玩和相互控制的DG-LAB联动模组。",
+	"authors": [
+		"Civon"
+	],
+	"contact": {
+		"homepage": "https://github.com/emia233/wf-dglab",
+		"sources": "https://github.com/emia233/wf-dglab"
+	},
+	"license": "MIT",
+	"icon": "assets/wildestfantasy/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.civon.wildestfantasy.WildestFantasy"
+		],
+		"client": [
+			"com.civon.wildestfantasy.client.WildestFantasyClient"
+		],
+		"modmenu": [
+			"com.civon.wildestfantasy.client.compat.WildestModMenu"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*",
+		"trinkets": ">=4.2.0"
+	}
+}

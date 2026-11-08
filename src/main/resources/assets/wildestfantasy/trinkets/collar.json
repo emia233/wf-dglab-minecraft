@@ -1,0 +1,17 @@
+{
+	"target": [
+		"wildestfantasy:collar"
+	],
+	"render": [
+		{
+			"type": "model",
+			"model_part": "head",
+			"offset": [
+				0,
+				-1.0,
+				0
+			],
+			"model": "wildestfantasy:item/collar"
+		}
+	]
+}

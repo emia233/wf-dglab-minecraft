@@ -1,0 +1,37 @@
+{
+	"format_version": "26.3",
+	"credit": "Made with Blockbench",
+	"parent": "minecraft:item/generated",
+	"textures": {
+		"layer0": "wildestfantasy:item/collar_key"
+	},
+	"display": {
+		"thirdperson_righthand": {
+			"rotation": [20, 11, 107],
+			"translation": [-1, 2.5, 1],
+			"scale": [0.42, 0.42, 0.42]
+		},
+		"thirdperson_lefthand": {
+			"rotation": [20, 11, -71],
+			"translation": [-1, 2.5, 1],
+			"scale": [0.42, 0.42, 0.42]
+		},
+		"firstperson_righthand": {
+			"rotation": [16, -66, 124],
+			"translation": [8.25, 0.5, -5.5],
+			"scale": [0.94, 0.94, 0.94]
+		},
+		"firstperson_lefthand": {
+			"rotation": [16, -66, -53],
+			"translation": [8.25, 0.5, -5.5],
+			"scale": [0.94, 0.94, 0.94]
+		},
+		"ground": {
+			"translation": [0, 0.5, 0],
+			"scale": [0.44, 0.44, 0.44]
+		},
+		"on_shelf": {
+			"translation": [0, 0, -3]
+		}
+	}
+}

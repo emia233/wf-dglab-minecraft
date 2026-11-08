@@ -1,0 +1,127 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+repositories {
+	// Mod Menu 的官方 maven（放最前，别让 Gradle 先去 fabricmc.net 找它）
+	maven {
+		name = "Terraformers"
+		url = "https://maven.terraformersmc.com/releases/"
+	}
+	// Trinkets Updated（Patbox）的官方 maven —— 提供 chest/necklace 饰品槽
+	maven {
+		name = "Nucleoid"
+		url = "https://maven.nucleoid.xyz/"
+	}
+	mavenCentral()
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"wildestfantasy" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+
+	// 联机调试用：客户端 A（run/，用户名 Dev）+ 客户端 B（run2/，用户名 Dev2）+ 无头服务端（run-server/）
+	runs {
+		client {
+			client()
+			configName = "Minecraft Client"
+			runDir = "run"
+			programArgs "--username", project.findProperty("devUsername") ?: "Dev"
+		}
+		client2 {
+			client()
+			configName = "Minecraft Client 2"
+			runDir = "run2"
+			programArgs "--username", project.findProperty("devUsername2") ?: "Dev2"
+		}
+		server {
+			server()
+			configName = "Minecraft Server"
+			runDir = "run-server"
+		}
+	}
+}
+
+dependencies {
+	// To change the versions see the gradle.properties file
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	// Fabric API. This is technically optional, but you probably want it anyway.
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// Trinkets：项圈要挂在独立的 chest/necklace 槽上，和胸甲槽互不干扰
+	implementation "eu.pb4:trinkets:${project.trinkets_version}"
+
+	// 二维码生成（纯 Java，不打点阵依赖）。include 会把它塞进 jar 的 META-INF/jars
+	implementation "com.google.zxing:core:${project.zxing_version}"
+	include "com.google.zxing:core:${project.zxing_version}"
+
+	// Mod Menu：模组列表里能直接打开配置界面（玩家没装 Mod Menu 也不会崩）
+	implementation "com.terraformersmc:modmenu:${project.modmenu_version}"
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+}
+
+// 产物文件名（游戏内显示名走 fabric.mod.json 的 name 字段）。
+// 项目名仍是 wildestfantasy，只有 jar 改叫 "WF dglab"。
+base {
+	archivesName = "WF dglab"
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+	// if it is present.
+	// If you remove this line, sources will not be generated.
+	withSourcesJar()
+
+	// Toolchain: Gradle downloads a matching JDK automatically instead of
+	// relying on whatever "java" happens to be on PATH.
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName"}
+	}
+}
+
+// configure the maven publication
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+	repositories {
+		// Add repositories to publish to here.
+		// Notice: This block does NOT have the same function as the block in the top level.
+		// The repositories here will be used for publishing your artifact, not for
+		// retrieving dependencies.
+	}
+}

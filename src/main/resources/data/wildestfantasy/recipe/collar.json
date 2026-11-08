@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "key": {
+    "W": "#minecraft:wool",
+    "L": "minecraft:leather"
+  },
+  "pattern": [
+    " W ",
+    "W W",
+    " L "
+  ],
+  "result": {
+    "id": "wildestfantasy:collar"
+  }
+}

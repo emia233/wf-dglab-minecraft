@@ -1,0 +1,22 @@
+pluginManagement {
+	repositories {
+		maven {
+			name = 'Fabric'
+			url = 'https://maven.fabricmc.net/'
+		}
+		mavenCentral()
+		gradlePluginPortal()
+	}
+	resolutionStrategy {
+		eachPlugin {
+			// Loom 的 plugin marker 只发布了 1.19-SNAPSHOT 版本，写死具体版本号（如 1.19.3）时会
+			// 找不到 marker 而报 "Plugin was not found"。这里直接映射到 module 坐标，固定版本也能用。
+			if (requested.id.id == 'net.fabricmc.fabric-loom') {
+				useModule("net.fabricmc:fabric-loom:${requested.version}")
+			}
+		}
+	}
+}
+
+// Should match your modid
+rootProject.name = 'wildestfantasy'
