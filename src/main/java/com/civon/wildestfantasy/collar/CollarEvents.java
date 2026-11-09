@@ -1,6 +1,7 @@
 package com.civon.wildestfantasy.collar;
 
 import com.civon.wildestfantasy.WildestFantasy;
+import com.civon.wildestfantasy.controller.ServerController;
 import com.civon.wildestfantasy.registry.ModItems;
 import dev.yumi.commons.TriState;
 import eu.pb4.trinkets.api.TrinketDropRule;
@@ -182,11 +183,14 @@ public final class CollarEvents {
                 }
                 if (CollarService.equipFor(tp, sp.getUUID(), stack)) {
                     stack.shrink(1);
+                    // 戴上即成为主人（用户 2026-11-09 要求），这一步同时建立控制器绑定
+                    ServerController.onEquipByOther(sp, tp);
                     sp.sendSystemMessage(Component.literal(
-                            "§5你给 " + tp.getScoreboardName() + " 戴上了项圈。"));
+                            "§5你给 " + tp.getScoreboardName() + " 戴上了项圈，§7现在是他的主人。"));
                     tp.sendSystemMessage(Component.literal(
-                            "§5" + sp.getScoreboardName() + " 给你戴上了项圈。"
-                                    + "§7按住 §f潜行 + 跳跃 5 秒§7可以挣脱；用 §f项圈锁§7可以锁死。"));
+                            "§5" + sp.getScoreboardName() + " 给你戴上了项圈，"
+                                    + "§7你的主人是 §f" + sp.getScoreboardName() + "§7。"
+                                    + "按住 §f潜行 + 跳跃 5 秒§7可以挣脱；用 §f项圈锁§7可以锁死。"));
                     return InteractionResult.SUCCESS;
                 }
                 sp.sendSystemMessage(Component.literal("§7没有可用的项链槽。"));

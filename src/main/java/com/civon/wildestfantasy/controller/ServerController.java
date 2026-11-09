@@ -156,6 +156,7 @@ public final class ServerController {
      * 主人手持控制器右键某个玩家：把对方变成自己的被控者。
      *
      * <p>要求对方已经戴着项圈，且这条项圈还没被别人绑定（或者本来就是自己）。
+     * 一个主人只能有一个被控者，绑新人时会自动放掉上一位。
      */
     public static boolean tryBind(ServerPlayer actor, ServerPlayer target, ItemStack controller) {
         if (actor == target) {
@@ -175,36 +176,83 @@ public final class ServerController {
                         .isPresent())
                 .orElse(false);
         if (ownedByOther) {
-            actor.sendSystemMessage(Component.literal("§c这条项圈已经有主人了。"));
+            // 已经被别人绑定的人不能被第三人抢走（用户 2026-11-09 要求）
+            actor.sendSystemMessage(Component.literal("§c它已经有主人了喵~"));
             return false;
         }
-        // 接管：清掉上一任主人（可能就是他自己的 bindSelf）留下的关系，否则旧面板还显示已绑定
-        UUID previous = OWNER_OF.get(target.getUUID());
-        if (previous != null) {
-            RELATIONS.remove(previous, target.getUUID());
-            if (!previous.equals(actor.getUUID())) {
-                ServerPlayer prev = actor.level().getServer().getPlayerList().getPlayer(previous);
-                if (prev != null) {
-                    sendPanel(prev, findController(prev));
-                    prev.sendSystemMessage(Component.literal(
-                            "§7你对 " + target.getName().getString() + " 的控制已被他人接管。"));
-                }
-            }
-        }
-        BASE.remove(target.getUUID());
-
         if (!CollarService.setCollarOwner(target, actor.getUUID())) {
             return false;
         }
+        // 他之前如果是「自己绑自己」，先把那条自绑关系清掉，免得残留
+        UUID previous = OWNER_OF.remove(target.getUUID());
+        if (previous != null && previous.equals(target.getUUID())) {
+            RELATIONS.remove(previous);
+        }
+        // 1:1：上一任被控者必须放掉，否则他的项圈主人还挂在自己身上，解不开也摘不下
+        releaseSubject(actor, target.getUUID());
+        establish(actor, target);
+        actor.sendSystemMessage(Component.literal("§5已绑定 §f" + target.getName().getString() + "§5。"));
+        target.sendSystemMessage(Component.literal("§7你的主人是 §f" + actor.getName().getString() + "§7。"));
+        return true;
+    }
+
+    /**
+     * 手持项圈右键别人：戴上项圈的同时立刻成为他的主人（用户 2026-11-09 要求）。
+     *
+     * <p>和控制器绑定完全等价，同样受 1:1 限制 —— 会先把上一任被控者放掉。
+     */
+    public static void onEquipByOther(ServerPlayer actor, ServerPlayer target) {
+        releaseSubject(actor, target.getUUID());
+        establish(actor, target);
+    }
+
+    /** 建立主人 → 被控的运行态：关系表、控制器标记、推一次对方强度。 */
+    private static void establish(ServerPlayer actor, ServerPlayer target) {
+        BASE.remove(target.getUUID());
+        HP_ENABLED.remove(target.getUUID());
         RELATIONS.put(actor.getUUID(), target.getUUID());
         OWNER_OF.put(target.getUUID(), actor.getUUID());
         // 背包里所有控制器都打上同一个绑定目标，换哪一把都能用
         stampControllers(actor, target.getUUID(), target.getName().getString());
         // 刚绑上时先把对方当前状态推过去，HUD 不会空着
         sendPeerStrength(actor, target.getUUID());
-        actor.sendSystemMessage(Component.literal("§5已绑定 §f" + target.getName().getString() + "§5。"));
-        target.sendSystemMessage(Component.literal("§7你的主人是 §f" + actor.getName().getString() + "§7。"));
-        return true;
+    }
+
+    /**
+     * 主人放掉当前的被控者（1:1 排他：绑新的之前必须先放掉旧的）。
+     *
+     * <p>项圈仍然戴着，但主人改回他自己 —— 这样他又能自己用钥匙或指令解开，
+     * 不会出现「项圈的主人早就不管他了，他却永远解不开」这种状态。
+     *
+     * @param keep 当前被控者正好就是这个人时什么都不做（重复绑定同一个人）
+     */
+    private static void releaseSubject(ServerPlayer owner, UUID keep) {
+        UUID subject = RELATIONS.get(owner.getUUID());
+        if (subject == null || subject.equals(keep)) {
+            return;
+        }
+        RELATIONS.remove(owner.getUUID());
+        OWNER_OF.remove(subject, owner.getUUID());
+        BASE.remove(subject);
+        PEER_STRENGTH.remove(subject);
+        ServerPlayNetworking.send(owner, PeerStrengthPayload.unknown());
+
+        ServerPlayer target = owner.level().getServer().getPlayerList().getPlayer(subject);
+        if (target == null) {
+            return;
+        }
+        if (CollarService.isWearingCollar(target)) {
+            CollarService.setCollarOwner(target, subject);
+        }
+        // 别再让他一直响：清掉基础强度，受伤输出恢复默认开启
+        ServerPlayNetworking.send(target, new RemoteCommandPayload(
+                RemoteCommandPayload.OP_CLEAR, 0, 0, 0));
+        ServerPlayNetworking.send(target, new RemoteCommandPayload(
+                RemoteCommandPayload.OP_HP, 1, 0, 0));
+        HP_ENABLED.remove(subject);
+        target.sendSystemMessage(Component.literal(
+                "§7" + owner.getName().getString()
+                        + " 已经解除了对你的控制，项圈主人回到你自己。"));
     }
 
     /** 单人模式：自己控自己，项圈主人记成自己。 */
@@ -213,27 +261,18 @@ public final class ServerController {
             actor.sendSystemMessage(Component.literal("§7你还没有戴项圈。"));
             return false;
         }
+        // 自己绑自己也占一个名额，先把之前控着的人放掉
+        releaseSubject(actor, actor.getUUID());
         if (!CollarService.setCollarOwner(actor, actor.getUUID())) {
             return false;
         }
-        RELATIONS.put(actor.getUUID(), actor.getUUID());
-        OWNER_OF.put(actor.getUUID(), actor.getUUID());
-        stampControllers(actor, actor.getUUID(), actor.getName().getString());
+        establish(actor, actor);
         actor.sendSystemMessage(Component.literal("§5已绑定自己。"));
         return true;
     }
 
     public static void unbind(ServerPlayer actor, ItemStack controller) {
-        UUID subject = RELATIONS.remove(actor.getUUID());
-        if (subject != null) {
-            OWNER_OF.remove(subject, actor.getUUID());
-            BASE.remove(subject);
-            // 解绑之后项圈主人回到被控者自己，他就可以自己摘、自己输入指令了
-            ServerPlayer target = actor.level().getServer().getPlayerList().getPlayer(subject);
-            if (target != null && CollarService.isWearingCollar(target)) {
-                CollarService.setCollarOwner(target, subject);
-            }
-        }
+        releaseSubject(actor, null);
         clearControllerStamps(actor);
         // 关系没了，主人那边的「对方」强度块清空
         ServerPlayNetworking.send(actor, PeerStrengthPayload.unknown());

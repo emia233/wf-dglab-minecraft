@@ -27,7 +27,7 @@ loom {
 		}
 	}
 
-	// 联机调试用：客户端 A（run/，用户名 Dev）+ 客户端 B（run2/，用户名 Dev2）+ 无头服务端（run-server/）
+	// 联机调试用：客户端 A（run/，Dev）+ B（run2/，Dev2）+ C（run3/，Dev3）+ 无头服务端（run-server/）
 	runs {
 		client {
 			client()
@@ -40,6 +40,12 @@ loom {
 			configName = "Minecraft Client 2"
 			runDir = "run2"
 			programArgs "--username", project.findProperty("devUsername2") ?: "Dev2"
+		}
+		client3 {
+			client()
+			configName = "Minecraft Client 3"
+			runDir = "run3"
+			programArgs "--username", project.findProperty("devUsername3") ?: "Dev3"
 		}
 		server {
 			server()

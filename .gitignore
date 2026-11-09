@@ -39,6 +39,7 @@ replay_*.log
 *.hprof
 *.jfr
 
-# 联机调试产生的运行目录（客户端 B 与服务端）
+# 联机调试产生的运行目录（客户端 B / C 与服务端）
 run2/
+run3/
 run-server/
