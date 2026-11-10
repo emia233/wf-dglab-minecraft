@@ -28,9 +28,15 @@ import java.util.List;
  * </ol>
  *
  * <p>UI 刻意只用原版控件，和原版设置界面观感一致。内容超过一屏时整页滚动。
+ *
+ * <p><b>尺寸</b>：Minecraft 的界面坐标是「逻辑像素」，全屏时 {@code guiScale} 会自动放大，
+ * 逻辑宽度反而可能比窗口模式还小（1080p 约 480，1440p / 2160p 只有 426）。
+ * 所以面板宽度取 {@code min(420, 屏宽 - 20)}，控件按比例分配，任何分辨率都不会左右溢出。
  */
 public final class ConfigScreen extends Screen {
-    private static final int PANEL_WIDTH = 420;
+    private static final int PANEL_MAX_W = 420;
+    private static final int PANEL_MIN_W = 240;
+    private static final int GAP = 4;
     private static final int ROW = 26;
     private static final int KEY_ROW = 24;
     private static final int CONTENT_TOP = 36;
@@ -65,6 +71,8 @@ public final class ConfigScreen extends Screen {
     private int scrollOffset;
     private int maxScroll;
     private int contentBottom;
+    /** 本次布局实际使用的面板宽度（随窗口变化重算）。 */
+    private int panelW = PANEL_MAX_W;
 
     public ConfigScreen() {
         super(Component.literal("模组配置"));
@@ -86,7 +94,8 @@ public final class ConfigScreen extends Screen {
         texts.clear();
 
         WildestConfig cfg = WildestConfig.get();
-        int left = this.width / 2 - PANEL_WIDTH / 2;
+        panelW = Math.max(PANEL_MIN_W, Math.min(PANEL_MAX_W, this.width - 20));
+        int left = this.width / 2 - panelW / 2;
         contentBottom = this.height - 40;
 
         int y = CONTENT_TOP - scrollOffset;
@@ -94,41 +103,41 @@ public final class ConfigScreen extends Screen {
         // ================= 强度 =================
         y = section(left, y, "强度");
 
-        comfortSlider = addRenderableWidget(new IntSlider(left, y, PANEL_WIDTH, 20,
+        comfortSlider = addRenderableWidget(new IntSlider(left, y, panelW, 20,
                 "舒适上限", 0, WildestConfig.HARD_MAX_INTENSITY, cfg.effectiveComfortMax(), 1,
                 v -> onComfort(cfg, v)));
         y += ROW;
 
-        absoluteSlider = addRenderableWidget(new IntSlider(left, y, PANEL_WIDTH, 20,
+        absoluteSlider = addRenderableWidget(new IntSlider(left, y, panelW, 20,
                 "绝对上限", 0, WildestConfig.HARD_MAX_INTENSITY, cfg.maxIntensity, 1,
                 v -> onAbsolute(cfg, v)));
         y += ROW;
 
-        int half = (PANEL_WIDTH - 4) / 2;
+        int half = (panelW - GAP) / 2;
         deathIntensitySlider = addRenderableWidget(new IntSlider(left, y, half, 20,
                 "死亡强度", 0, Math.max(1, cfg.maxIntensity),
                 Math.min(cfg.deathIntensity, cfg.maxIntensity), 1,
                 v -> onDeathIntensity(cfg, v)));
-        addRenderableWidget(new IntSlider(left + half + 4, y, half, 20,
+        addRenderableWidget(new IntSlider(left + half + GAP, y, half, 20,
                 "死亡时长", 1, 10, clampDeathSeconds(cfg), 1, "秒",
                 v -> onDeathSeconds(cfg, v)));
         y += ROW;
 
-        hpSlider = addRenderableWidget(new IntSlider(left, y, PANEL_WIDTH, 20,
+        hpSlider = addRenderableWidget(new IntSlider(left, y, panelW, 20,
                 "受伤反馈", FEEDBACK_MIN, FEEDBACK_MAX, clampFeedback(cfg.hpFeedback), 1,
                 v -> onHp(cfg, v)));
         texts.add(new TextLine(left + 2, y + 22,
                 Component.literal("§7每失去一点生命值（半颗心），强度 +" + hpSlider.intValue()), false));
         y += ROW + HINT;
 
-        damageSlider = addRenderableWidget(new IntSlider(left, y, PANEL_WIDTH, 20,
+        damageSlider = addRenderableWidget(new IntSlider(left, y, panelW, 20,
                 "伤害反馈", FEEDBACK_MIN, FEEDBACK_MAX, clampFeedback(cfg.damageFeedback), 1,
                 v -> onDamage(cfg, v)));
         texts.add(new TextLine(left + 2, y + 22,
                 Component.literal("§7每受到一点伤害，强度 +" + damageSlider.intValue()), false));
         y += ROW + HINT;
 
-        sustainedSlider = addRenderableWidget(new IntSlider(left, y, PANEL_WIDTH, 20,
+        sustainedSlider = addRenderableWidget(new IntSlider(left, y, panelW, 20,
                 "持续伤害反馈", 0, Math.max(1, cfg.maxIntensity),
                 Math.min(cfg.sustainedFeedback, cfg.maxIntensity), 1,
                 v -> onSustained(cfg, v)));
@@ -136,7 +145,7 @@ public final class ConfigScreen extends Screen {
                 Component.literal("§7持续掉血的伤害反馈（着火/溺水/中毒等），多个不叠加"), false));
         y += ROW + HINT;
 
-        projectileSlider = addRenderableWidget(new IntSlider(left, y, PANEL_WIDTH, 20,
+        projectileSlider = addRenderableWidget(new IntSlider(left, y, panelW, 20,
                 "弹射物伤害反馈", 0, Math.max(1, cfg.maxIntensity),
                 Math.min(cfg.projectileFeedback, cfg.maxIntensity), 1,
                 v -> onProjectile(cfg, v)));
@@ -144,7 +153,7 @@ public final class ConfigScreen extends Screen {
                 Component.literal("§7被箭等弹射物打中时增加的强度，持续300ms"), false));
         y += ROW + HINT;
 
-        fallSlider = addRenderableWidget(new IntSlider(left, y, PANEL_WIDTH, 20,
+        fallSlider = addRenderableWidget(new IntSlider(left, y, panelW, 20,
                 "摔落伤害反馈", 0, Math.max(1, cfg.maxIntensity),
                 Math.min(cfg.fallFeedback, cfg.maxIntensity), 1,
                 v -> onFall(cfg, v)));
@@ -153,19 +162,19 @@ public final class ConfigScreen extends Screen {
         y += ROW + HINT;
 
         addRenderableWidget(Button.builder(Component.literal("扫码连接"), b -> PairingScreen.open())
-                .bounds(left, y, PANEL_WIDTH, 20).build());
+                .bounds(left, y, panelW, 20).build());
         y += ROW + 8;
 
         // ================= 强度显示 =================
         y = section(left, y, "强度显示");
 
-        addRenderableWidget(new IntSlider(left, y, PANEL_WIDTH, 20, "HUD 横向位置",
+        addRenderableWidget(new IntSlider(left, y, panelW, 20, "HUD 横向位置",
                 0, 100, clampPercent(cfg.hudX), 1, "%", v -> onHudX(cfg, v)));
         y += ROW;
-        addRenderableWidget(new IntSlider(left, y, PANEL_WIDTH, 20, "HUD 纵向位置",
+        addRenderableWidget(new IntSlider(left, y, panelW, 20, "HUD 纵向位置",
                 0, 100, clampPercent(cfg.hudY), 1, "%", v -> onHudY(cfg, v)));
         y += ROW;
-        addRenderableWidget(new IntSlider(left, y, PANEL_WIDTH, 20, "HUD 字号",
+        addRenderableWidget(new IntSlider(left, y, panelW, 20, "HUD 字号",
                 HUD_SCALE_MIN, HUD_SCALE_MAX, clampHudScale(cfg.hudScalePercent), 10, "%",
                 v -> onHudScale(cfg, v)));
         y += ROW;
@@ -193,7 +202,7 @@ public final class ConfigScreen extends Screen {
 
         updateVisibility();
         addRenderableWidget(Button.builder(Component.literal("完成"), b -> onClose())
-                .bounds(left + PANEL_WIDTH / 2 - 50, contentBottom + 8, 100, 20).build());
+                .bounds(left + panelW / 2 - 50, contentBottom + 8, 100, 20).build());
     }
 
     /** 画一个栏目标题，返回下一行的 y。 */
@@ -213,7 +222,7 @@ public final class ConfigScreen extends Screen {
         texts.add(new TextLine(left + 2, y + 6, Component.literal("§f" + head), false));
 
         int btnX = left + nameWidth + 6;
-        int btnW = (PANEL_WIDTH - nameWidth - 10) / 2;
+        int btnW = Math.max(56, (left + panelW - btnX - GAP) / 2);
 
         addRenderableWidget(Button.builder(
                 Component.literal(peer
@@ -240,7 +249,7 @@ public final class ConfigScreen extends Screen {
                     }
                     cfg.save();
                     rebuild();
-                }).bounds(btnX + btnW + 4, y, btnW, 20).build());
+                }).bounds(btnX + btnW + GAP, y, btnW, 20).build());
 
         return y + ROW;
     }
@@ -279,17 +288,17 @@ public final class ConfigScreen extends Screen {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
         graphics.centeredText(this.font, Component.literal("WF dglab 模组配置"), this.width / 2, 10, 0xFFFFFFFF);
-        graphics.fill(this.width / 2 - PANEL_WIDTH / 2, 26,
-                this.width / 2 + PANEL_WIDTH / 2, 27, 0x40FFFFFF);
+        graphics.fill(this.width / 2 - panelW / 2, 26,
+                this.width / 2 + panelW / 2, 27, 0x40FFFFFF);
 
-        int left = this.width / 2 - PANEL_WIDTH / 2;
+        int left = this.width / 2 - panelW / 2;
         for (TextLine line : texts) {
             if (line.y() < CONTENT_TOP - 10 || line.y() > contentBottom) {
                 continue;
             }
             if (line.header()) {
                 graphics.text(this.font, line.text(), line.x(), line.y(), 0xFFFFFFFF);
-                graphics.fill(line.x(), line.y() + 11, line.x() + PANEL_WIDTH, line.y() + 12, 0x40FFFFFF);
+                graphics.fill(line.x(), line.y() + 11, line.x() + panelW, line.y() + 12, 0x40FFFFFF);
             } else {
                 graphics.text(this.font, line.text(), line.x(), line.y(), 0xFFA0A0A0);
             }
@@ -298,7 +307,7 @@ public final class ConfigScreen extends Screen {
         if (maxScroll <= 0) {
             return;
         }
-        int x = left + PANEL_WIDTH + 4;
+        int x = Math.min(left + panelW + 4, this.width - 8);
         int viewHeight = contentBottom - CONTENT_TOP;
         int contentHeight = viewHeight + maxScroll;
         graphics.fill(x, CONTENT_TOP, x + 6, contentBottom, 0x60000000);
@@ -322,16 +331,22 @@ public final class ConfigScreen extends Screen {
         String text = awaiting == mapping
                 ? "> 按任意键…"
                 : bound.getDisplayName().getString();
+
+        int clearW = clampW(Math.round(panelW * 0.22f), 60, 92);
+        int keyW = clampW(Math.round(panelW * 0.40f), 96, 170);
+        int clearX = left + panelW - clearW;
+        int keyX = clearX - GAP - keyW;
+
         addRenderableWidget(Button.builder(Component.literal(text), b -> {
             awaiting = mapping;
             rebuild();
-        }).bounds(left + 154, y, 170, 20).build());
+        }).bounds(keyX, y, keyW, 20).build());
         addRenderableWidget(Button.builder(Component.literal("清除"), b -> {
             mapping.setKey(InputConstants.UNKNOWN);
             KeyMapping.resetMapping();
             Minecraft.getInstance().options.save();
             rebuild();
-        }).bounds(left + 328, y, 92, 20).build());
+        }).bounds(clearX, y, clearW, 20).build());
         return y + KEY_ROW;
     }
 
@@ -451,6 +466,10 @@ public final class ConfigScreen extends Screen {
     private void onHudScale(WildestConfig cfg, int v) {
         cfg.hudScalePercent = v;
         cfg.save();
+    }
+
+    private static int clampW(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private static int clampFeedback(int v) {
