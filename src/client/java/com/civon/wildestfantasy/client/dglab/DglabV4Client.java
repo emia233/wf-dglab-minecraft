@@ -76,6 +76,14 @@ public final class DglabV4Client {
     private volatile int lastSentA = -1;
     private volatile int lastSentB = -1;
 
+    /**
+     * 本地直连模式下由本模组扮演「服务端」，null 表示走官方中转。
+     *
+     * <p>两种模式共用同一套 V4 帧处理（{@link #handleFrame}），差别只在传输层：
+     * 中转模式是本类主动连 {@link #DEFAULT_SERVER}，本地模式是我们自己监听端口等 APP 连进来。
+     */
+    private volatile LocalDglabServer localServer;
+
     // ------------------------------------------------------------------
     // 连接生命周期
     // ------------------------------------------------------------------
@@ -143,7 +151,112 @@ public final class DglabV4Client {
         }
     }
 
+    /**
+     * 本地直连模式：本模组自己开一个 WebSocket 服务器，等 APP 连进来。
+     *
+     * <p>适合官方中转被线路阻断、或者手机和电脑本来就在同一个局域网的情况。
+     * 端口被占用时会自动往后找一个（最多 10 个），实际端口见 {@link #localPort()}。
+     *
+     * @param port        期望端口（配置里的 localPort）
+     * @param pairingCode 配对码，随机生成，每次开服都不一样
+     * @return 是否成功起服
+     */
+    public synchronized boolean connectLocal(int port, String pairingCode) {
+        if (state != State.DISCONNECTED) {
+            LOG.info("连接请求被忽略，当前状态 {}", state);
+            return false;
+        }
+        String code = (pairingCode == null || pairingCode.isBlank()) ? "wf" : pairingCode.trim();
+        this.lastError = null;
+        this.controllerId = code;
+
+        LocalDglabServer server = new LocalDglabServer(port, code, new LocalDglabServer.Listener() {
+            @Override
+            public void onAttached(String appClientId) {
+                onLocalAttached(appClientId);
+            }
+
+            @Override
+            public void onText(String json) {
+                // 本地模式下 APP 发来的帧格式和中转模式完全一样，直接复用同一套处理
+                try {
+                    handleFrame(json);
+                } catch (Throwable t) {
+                    LOG.warn("处理本地帧失败: {}", json, t);
+                }
+            }
+
+            @Override
+            public void onDetached() {
+                onLocalDetached();
+            }
+        });
+
+        // 先挂上引用再 start：accept 线程可能瞬间就接进一个连接，
+        // 那时回调里要靠 localServer 判断「是我这台的」。
+        this.localServer = server;
+        int bound = server.start();
+        if (bound <= 0) {
+            this.localServer = null;
+            lastError = "本地端口 " + port + " 起不来，换一个端口试试";
+            setState(State.DISCONNECTED);
+            return false;
+        }
+
+        this.serverUrl = "ws://" + server.lanIp() + ":" + bound;
+        setState(State.WAITING_APP);
+        LOG.info("本地直连已就绪：{}", server.pairingUrl());
+        return true;
+    }
+
+    /** APP 连进来时，我们要主动扮演「中转服务端」，把 hello 和 controller_attached 发下去。 */
+    private void onLocalAttached(String appId) {
+        if (localServer == null) {
+            return;
+        }
+        appClientId = appId;
+
+        JsonObject hello = new JsonObject();
+        hello.addProperty("type", "hello");
+        hello.addProperty("clientId", appId);
+        sendRaw(gson.toJson(hello));
+
+        JsonObject attached = new JsonObject();
+        attached.addProperty("type", "controller_attached");
+        attached.addProperty("clientId", controllerId);
+        sendRaw(gson.toJson(attached));
+
+        LOG.info("APP 已接入（本地直连）: {}", appId);
+        setState(State.READY);
+        requestDevices();
+    }
+
+    private void onLocalDetached() {
+        LocalDglabServer server = localServer;
+        if (server == null) {
+            return;
+        }
+        LOG.info("APP 已断开（本地直连），输出归零");
+        appClientId = null;
+        devices.clear();
+        lastSentA = -1;
+        lastSentB = -1;
+        if (server.isRunning()) {
+            // 服务器还在跑，等下一个 APP 连进来
+            setState(State.WAITING_APP);
+        } else {
+            localServer = null;
+            handleDisconnected("本地连接已关闭");
+        }
+    }
+
     public synchronized void disconnect() {
+        // 先清空引用再 stop，避免 stop 触发的 onDetached 又绕回来
+        LocalDglabServer local = localServer;
+        localServer = null;
+        if (local != null) {
+            local.stop();
+        }
         WebSocket ws = socket;
         socket = null;
         if (ws != null) {
@@ -454,28 +567,25 @@ public final class DglabV4Client {
     }
 
     private boolean sendRawFrame(JsonObject frame) {
+        return sendRaw(gson.toJson(frame));
+    }
+
+    private boolean sendRaw(String json) {
+        // 本地直连模式：我们自己就是「服务端」，直接推给连进来的 APP
+        LocalDglabServer local = localServer;
+        if (local != null) {
+            return local.sendText(json);
+        }
         WebSocket ws = socket;
         if (ws == null || ws.isOutputClosed()) {
             return false;
         }
         try {
-            ws.sendText(gson.toJson(frame), true);
+            ws.sendText(json, true);
             return true;
         } catch (Throwable t) {
             LOG.debug("发送失败", t);
             return false;
-        }
-    }
-
-    private void sendRaw(String json) {
-        WebSocket ws = socket;
-        if (ws == null || ws.isOutputClosed()) {
-            return;
-        }
-        try {
-            ws.sendText(json, true);
-        } catch (Throwable ignored) {
-            // 连接已断开
         }
     }
 
@@ -505,6 +615,17 @@ public final class DglabV4Client {
 
     public String serverUrl() {
         return serverUrl;
+    }
+
+    /** 当前是否本地直连模式（自己开服务器等 APP 连）。 */
+    public boolean isLocalMode() {
+        return localServer != null;
+    }
+
+    /** 本地模式实际监听的端口；非本地模式返回 0。 */
+    public int localPort() {
+        LocalDglabServer local = localServer;
+        return local == null ? 0 : local.port();
     }
 
     public List<DglabDevice> devices() {

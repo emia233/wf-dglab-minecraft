@@ -33,6 +33,12 @@ public final class WildestConfig {
     public boolean enabled = true;
     /** 启动客户端后自动连一次中转服务，这样不用进世界也能先拿到配对链接。 */
     public boolean autoConnect = false;
+    /**
+     * 本地直连模式（自己开 WebSocket 服务器让 APP 连）的端口。
+     *
+     * <p>被占用时会自动往后找 10 个，实际端口会显示在扫码界面上。
+     */
+    public int localPort = 9977;
 
     // ---- 强度 ----
     /**

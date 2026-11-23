@@ -7,6 +7,7 @@ import com.civon.wildestfantasy.client.dglab.QrCodeService;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
@@ -25,6 +26,8 @@ public final class PairingScreen extends Screen {
 
     private boolean revealed;
     private String lastError;
+    private Button localButton;
+    private EditBox portField;
 
     public PairingScreen() {
         super(Component.literal("扫码连接"));
@@ -38,17 +41,79 @@ public final class PairingScreen extends Screen {
     @Override
     protected void init() {
         DglabV4Client dglab = WildestFantasyClient.dglab();
+        // 默认走官方中转；已经在本地直连（或已连上中转）时不重复连
         if (dglab.state() == DglabV4Client.State.DISCONNECTED) {
             dglab.connect(WildestConfig.get().serverUrl);
         }
 
-        int bottom = this.height - 40;
+        int bottom = this.height - 62;
         addRenderableWidget(Button.builder(Component.literal("重新打开图片"), b -> openPng())
                 .bounds(this.width / 2 - 154, bottom, 120, 20).build());
         addRenderableWidget(Button.builder(Component.literal("复制地址"), b -> copyAddress())
                 .bounds(this.width / 2 - 30, bottom, 100, 20).build());
         addRenderableWidget(Button.builder(Component.literal("关闭"), b -> onClose())
                 .bounds(this.width / 2 + 74, bottom, 80, 20).build());
+
+        // 本地直连入口：官方中转不通（或手机就在同一 WiFi）时用这条。
+        // 左边小输入框给端口，右边是按钮，一起居中。
+        WildestConfig cfg = WildestConfig.get();
+        int fieldW = 70;
+        int buttonW = 150;
+        int rowW = fieldW + 4 + buttonW;
+        int rowX = this.width / 2 - rowW / 2;
+
+        portField = new EditBox(this.font, rowX, bottom + 26, fieldW, 20, Component.literal("端口"));
+        portField.setMaxLength(5);
+        portField.setValue(String.valueOf(cfg.localPort));
+        addRenderableWidget(portField);
+
+        String label = dglab.isLocalMode() ? "重新开始本地连接" : "使用本地连接";
+        localButton = addRenderableWidget(Button.builder(Component.literal(label), b -> startLocal())
+                .bounds(rowX + fieldW + 4, bottom + 26, buttonW, 20).build());
+    }
+
+    /** 输入框里的端口，非法就退回默认值。 */
+    private int parsePort() {
+        if (portField == null) {
+            return WildestConfig.get().localPort;
+        }
+        String text = portField.getValue().trim();
+        try {
+            int value = Integer.parseInt(text);
+            return value > 0 && value < 65536 ? value : WildestConfig.get().localPort;
+        } catch (NumberFormatException ignored) {
+            return WildestConfig.get().localPort;
+        }
+    }
+
+    /** 关掉当前连接，改用本地直连，配对码每次重新随机。 */
+    private void startLocal() {
+        DglabV4Client dglab = WildestFantasyClient.dglab();
+        WildestConfig cfg = WildestConfig.get();
+        int port = parsePort();
+        cfg.localPort = port;
+        cfg.save();
+        if (portField != null) {
+            portField.setValue(String.valueOf(port));
+        }
+
+        dglab.disconnect();
+        boolean ok = dglab.connectLocal(port, randomPairingCode());
+        revealed = false;
+        lastError = ok ? null : dglab.lastError();
+        if (ok && localButton != null) {
+            localButton.setMessage(Component.literal("重新开始本地连接"));
+        }
+    }
+
+    /** 6 位小写十六进制，够用又不用记。 */
+    private static String randomPairingCode() {
+        StringBuilder sb = new StringBuilder(6);
+        var random = java.util.concurrent.ThreadLocalRandom.current();
+        for (int i = 0; i < 6; i++) {
+            sb.append(Integer.toHexString(random.nextInt(16)));
+        }
+        return sb.toString();
     }
 
     @Override
@@ -100,16 +165,34 @@ public final class PairingScreen extends Screen {
 
         graphics.centeredText(this.font, this.title, centerX, 20, 0xFFFFFFFF);
 
-        String status = switch (dglab.state()) {
-            case READY -> "§aAPP 已接入，郊狼就绪";
-            case WAITING_APP -> revealed
-                    ? "§a二维码已生成，请使用 DG-LAB 4.0 APP 的 socket 扫描刚打开的图片"
-                    : "§7正在生成二维码…";
-            case CONNECTING -> "§7正在连接中转服务…";
-            default -> "§c未连接中转服务";
-        };
+        boolean local = dglab.isLocalMode();
+        String status;
+        if (local) {
+            status = switch (dglab.state()) {
+                case READY -> "§aApp 已连接";
+                case WAITING_APP -> revealed
+                        ? "§a二维码已生成，手机需与本机在同一 WiFi"
+                        : "§7正在生成本地二维码…";
+                default -> "§c本地服务器未启动";
+            };
+        } else {
+            status = switch (dglab.state()) {
+                case READY -> "§aApp 已连接";
+                case WAITING_APP -> revealed
+                        ? "§a二维码已生成，请使用 DG-LAB 4.0 APP 的 socket 扫描刚打开的图片"
+                        : "§7正在生成二维码…";
+                case CONNECTING -> "§7正在连接中转服务…";
+                default -> "§c未连接中转服务";
+            };
+        }
         graphics.centeredText(this.font, Component.literal(status), centerX, y, 0xFFFFFFFF);
         y += 22;
+
+        if (local) {
+            String info = "§7本地端口 " + dglab.localPort();
+            graphics.centeredText(this.font, Component.literal(info), centerX, y, 0xFFAAAAAA);
+            y += 14;
+        }
 
         // 安全提示：红字，太宽就自动折成多行
         var warnLines = this.font.split(
@@ -122,10 +205,24 @@ public final class PairingScreen extends Screen {
         }
         y += 8;
 
+        // 本地连接的排查提示，三条单独一行便于对号入座
+        graphics.centeredText(this.font,
+                Component.literal("§a如果官方中转连接超时，可使用本地连接，检查："), centerX, y, 0xFF55FF55);
+        y += 12;
+        graphics.centeredText(this.font,
+                Component.literal("§e1. 同一 wifi 且无客户端隔离"), centerX, y, 0xFFFFE060);
+        y += 11;
+        graphics.centeredText(this.font,
+                Component.literal("§e2. 防火墙已放行"), centerX, y, 0xFFFFE060);
+        y += 11;
+        graphics.centeredText(this.font,
+                Component.literal("§e3. 端口未被占用"), centerX, y, 0xFFFFE060);
+        y += 14;
+
         // 不显示 ws 地址（太长且玩家用不上），但「复制地址」按钮留着兜底。
         // 图片路径常常比屏幕还宽（PCL 的实例目录带空格和中文），自动折行。
         var pathLines = this.font.split(
-                Component.literal("§8图片位置：" + WildestFantasyClient.configDir().resolve("qr.png")),
+                Component.literal("§7图片位置：" + WildestFantasyClient.configDir().resolve("qr.png")),
                 Math.max(80, this.width - 40));
         for (var line : pathLines) {
             graphics.centeredText(this.font, line, centerX, y, 0xFF808080);
